@@ -1,0 +1,80 @@
+--------------------------------------------------------
+------------FINAL QUERY STARTS HERE---------------------
+--------------------------------------------------------
+
+with emails as (
+select *   
+FROM DISCOVERY.V_SFMC_CUSTOMER_DATA_FIRST F
+WHERE eventdate_aedt >= '2023-12-06'
+and rank = 1
+)
+
+,FINAL AS (select
+e.*
+,CASE WHEN PREMIUM_FREQUENCY_CD = 'MON' THEN e.outstanding_balance_value *12
+      WHEN PREMIUM_FREQUENCY_CD = 'BIAN' THEN e.outstanding_balance_value *2
+      WHEN PREMIUM_FREQUENCY_CD = 'QTR' THEN e.outstanding_balance_value *4
+      ELSE e.outstanding_balance_value
+      END AS outstanding_balance_value_annualised
+,CAST(COALESCE(ppr.premium_due_date,ppr2.premium_due_date,ppr3.premium_due_date,ppr4.premium_due_date,ppr5.premium_due_date) AS DATE) AS premium_due_date
+,CAST(COALESCE(ppr.PREMIUM_PAID_DATE,ppr2.PREMIUM_PAID_DATE,ppr3.PREMIUM_PAID_DATE,ppr4.PREMIUM_PAID_DATE,ppr5.PREMIUM_PAID_DATE) AS DATE) AS PREMIUM_PAID_DATE
+--,CAST(ppr.PREMIUM_PROCESS_DATE AS DATE) AS PREMIUM_PROCESS_DATE
+--,CAST(ppr.PREMIUM_APPLY_DATE AS DATE) AS PREMIUM_APPLY_DATE
+,CASE WHEN PREMIUM_FREQUENCY_CD = 'MON' THEN sum(ppr.premium_amount_paid *12)
+      WHEN PREMIUM_FREQUENCY_CD = 'BIAN' THEN sum(ppr.premium_amount_paid *2)
+      WHEN PREMIUM_FREQUENCY_CD = 'QTR' THEN sum(ppr.premium_amount_paid *4)
+      ELSE sum(ppr.premium_amount_paid)
+      END AS premium_paid_14days
+,CASE WHEN PREMIUM_FREQUENCY_CD = 'MON' THEN sum(ppr2.premium_amount_paid *12)
+      WHEN PREMIUM_FREQUENCY_CD = 'BIAN' THEN sum(ppr2.premium_amount_paid *2)
+      WHEN PREMIUM_FREQUENCY_CD = 'QTR' THEN sum(ppr2.premium_amount_paid *4)
+      ELSE sum(ppr2.premium_amount_paid)
+      END AS premium_paid_24days
+,CASE WHEN PREMIUM_FREQUENCY_CD = 'MON' THEN sum(ppr3.premium_amount_paid *12)
+      WHEN PREMIUM_FREQUENCY_CD = 'BIAN' THEN sum(ppr3.premium_amount_paid *2)
+      WHEN PREMIUM_FREQUENCY_CD = 'QTR' THEN sum(ppr3.premium_amount_paid *4)
+      ELSE sum(ppr3.premium_amount_paid)
+      END AS premium_paid_34days
+,CASE WHEN PREMIUM_FREQUENCY_CD = 'MON' THEN sum(ppr4.premium_amount_paid)*12
+      WHEN PREMIUM_FREQUENCY_CD = 'BIAN' THEN sum(ppr4.premium_amount_paid)*2
+      WHEN PREMIUM_FREQUENCY_CD = 'QTR' THEN sum(ppr4.premium_amount_paid)*4
+      ELSE sum(ppr4.premium_amount_paid)
+      END AS premium_paid_39days
+,CASE WHEN PREMIUM_FREQUENCY_CD = 'MON' THEN sum(ppr5.premium_amount_paid *12)
+      WHEN PREMIUM_FREQUENCY_CD = 'BIAN' THEN sum(ppr5.premium_amount_paid *2)
+      WHEN PREMIUM_FREQUENCY_CD = 'QTR' THEN sum(ppr5.premium_amount_paid *4)
+      ELSE sum(ppr5.premium_amount_paid)
+      END AS premium_paid_49days
+,CASE WHEN sum(ppr.premium_amount_paid) > 0 OR SUM(ppr2.premium_amount_paid) > 0  OR SUM(ppr3.premium_amount_paid) > 0 OR SUM(ppr4.premium_amount_paid) > 0 OR  SUM(ppr5.premium_amount_paid) > 0 THEN 'Y' ELSE 'N' END AS PREMIUM_PAID_INDICATOR
+
+/*,sum(ppr.premium_amount_paid) as premium_paid_14days
+,sum(ppr2.premium_amount_paid) as premium_paid_24days
+,sum(ppr3.premium_amount_paid) as premium_paid_34days
+,sum(ppr4.premium_amount_paid) as premium_paid_39days
+,sum(ppr5.premium_amount_paid) as premium_paid_49days*/
+,bvs.premium_frequency_cd
+,bvs.ANNUAL_PREMIUM + ANNUAL_STAMP_DUTY AS TOTAL_ANNUAL_PREMIUM
+,case when DATEDIFF(DAY, CAST(COALESCE(ppr.premium_due_date,ppr2.premium_due_date,ppr3.premium_due_date,ppr4.premium_due_date,ppr5.premium_due_date) AS DATE), e.eventdate_aedt) > 5 THEN 'Y' ELSE 'N' END AS LATE_EMAIL
+,DATEDIFF(DAY,EVENTDATE_AEDT, CAST(COALESCE(ppr.PREMIUM_PAID_DATE,ppr2.PREMIUM_PAID_DATE,ppr3.PREMIUM_PAID_DATE,ppr4.PREMIUM_PAID_DATE,ppr5.PREMIUM_PAID_DATE) AS DATE)) AS DAYS_TO_MAKE_PAYMENT
+from emails e
+left join shadowprod_edw.sem.policy_premium_receipt ppr on e.policy_id = ppr.bancs_policy_id
+and ppr.premium_paid_date between  e.eventdate_aedt and e.event14daysextra and ppr.premium_due_date > DATEADD(MONTH, -1, e.eventdate_aedt) and ppr.premium_due_date <= e.eventdate_aedt
+left join shadowprod_edw.sem.policy_premium_receipt ppr2 on e.policy_id = ppr2.bancs_policy_id
+and ppr2.premium_paid_date between  e.event14daysextra + 1 and e.EVENT24DAYSEXTRA and ppr2.premium_due_date > DATEADD(MONTH, -1, e.eventdate_aedt) and ppr2.premium_due_date <= e.eventdate_aedt
+left join shadowprod_edw.sem.policy_premium_receipt ppr3 on e.policy_id = ppr3.bancs_policy_id
+and ppr3.premium_paid_date between  e.event24daysextra + 1 and e.event34daysextra and ppr3.premium_due_date > DATEADD(MONTH, -1, e.eventdate_aedt) and ppr3.premium_due_date <= e.eventdate_aedt
+left join shadowprod_edw.sem.policy_premium_receipt ppr4 on e.policy_id = ppr4.bancs_policy_id
+and ppr4.premium_paid_date between  e.event34daysextra + 1 and e.event39daysextra and ppr4.premium_due_date > DATEADD(MONTH, -1, e.eventdate_aedt) and ppr.premium_due_date <= e.eventdate_aedt
+left join shadowprod_edw.sem.policy_premium_receipt ppr5 on e.policy_id = ppr5.bancs_policy_id
+and ppr5.premium_paid_date between  e.event39daysextra + 1 and e.event49daysextra and ppr5.premium_due_date > DATEADD(MONTH, -1, e.eventdate_aedt) and ppr5.premium_due_date <= e.eventdate_aedt
+--LEFT JOIN VAULT.S_TA_POA_PREM_DUE DUE ON DUE.POP_POL_ID = PPR.BANCS_POLICY_ID AND DUE.PND_DUE_DATE = PPR.PREMIUM_DUE_DATE AND PND_DELETED_FLG = 'N' 
+--WHERE DUE.PND_DUE_LEVEL_CD = 'CON'
+left join vault.bv_s_policy_pit bvs on bvs.bancs_policy_id = e.policy_id and e.eventdate_aedt => dss_start_date and e.eventdate_aedt < dss_end_date
+
+group by all
+)
+
+SELECT *
+--,CASE WHEN MarketingGroup = 'Control' AND JOURNEYNAME = '3.01.01 - Missed Payment 2.0 ASAP' THEN DENSE_RANK() OVER(PARTITION BY POLICY_ID,JOURNEYNAME,PREMIUM_PAID_INDICATOR ORDER BY eventdate_aedt ) ELSE NULL END AS CONTROL_RANK_FOR_EMAIL
+FROM FINAL
+order by POLICY_NUMBER,EVENTDATE_AEDT
